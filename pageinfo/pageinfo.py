@@ -3,11 +3,11 @@ from bs4 import BeautifulSoup
 from HTMLParser import HTMLParseError
 import json
 import re
-from urlparse import urlparse
-from urlparse import urljoin
+from urlparse import urlparse, urljoin
 
 #get title, description, favicon, twitter card, facebook open graph data
 def get_meta(url=None, raw_html=None):
+    domain = None
     if url:
         response = requests.get(url, timeout=3)
         if not response.status_code == 200:
@@ -16,8 +16,6 @@ def get_meta(url=None, raw_html=None):
 
         parsed_uri = urlparse( url )
         domain = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
-    else:
-        domain = None
     
     data = {}
     data["raw_html"] = raw_html
@@ -55,23 +53,26 @@ def get_meta(url=None, raw_html=None):
             data["description"] = soup.find('meta', attrs={'name':'description'})["content"]
 
         #get facebook open graph data
-        if soup.findAll('meta', {"property":re.compile("^og")}):
-            for tag in soup.findAll('meta', {"property":re.compile("^og")}):
-                tag_type = tag['property']
-                data["facebook"][tag_type] = tag['content']
-                if tag_type == "og:description" and data["description"] is None:
-                    data["description"] = tag["content"]
+        for attr in ('name', 'property'):
+            tags = soup.findAll('meta', attrs={attr:re.compile("^og")})
+            for tag in tags:
+                tag_type = tag[attr]
+                content_attr = tag.get('content') or tag.get('value')
+                if content_attr:
+                    data["facebook"][tag_type] = tag[content_attr]
+                    if tag_type == "og:description" and data["description"] is None:
+                        data["description"] = tag[content_attr]
 
         #get twitter card data
         for attr in ('name', 'property'):
             tags = soup.findAll('meta', attrs={attr:re.compile("^twitter")})
             for tag in tags:
                 tag_type = tag[attr]
-                alt_attr = 'content' if 'content' in tag.attrs else 'value'
-                if alt_attr in tag.attrs:
-                    data["twitter"][tag_type] = tag[alt_attr]
-                if tag_type == "twitter:description" and data["description"] is None:
-                    data["description"] = tag[attr]
+                content_attr = tag.get('content') or tag.get('value')
+                if content_attr:
+                    data["twitter"][tag_type] = tag[content_attr]
+                    if tag_type == "twitter:description" and data["description"] is None:
+                        data["description"] = tag[content_attr]
         # make sure canonical exists, use og as backup
         if not data['canonical'] or len(data['canonical']) == 0:
             if data['facebook'].has_key('og:url'):
